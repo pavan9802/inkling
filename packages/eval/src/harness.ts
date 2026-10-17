@@ -1,4 +1,5 @@
-import { notImplemented } from '@inkling/core';
+import { readdir, readFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import { editSimilarity, exactMatch, lineExact } from './metrics.js';
 
 export interface HoleCase {
@@ -55,7 +56,18 @@ export function aggregate(results: readonly CaseResult[]): EvalReport {
   };
 }
 
-/** Load hole cases from a fixture corpus. Implemented alongside the Phase-0 corpus. */
-export function loadCases(_corpusDir: string): HoleCase[] {
-  return notImplemented('loadCases');
+/**
+ * Load hole cases from a fixture corpus directory. Each `.json` file must be a
+ * serialised `HoleCase` — see `packages/eval/fixtures/` for examples.
+ */
+export async function loadCases(corpusDir: string): Promise<HoleCase[]> {
+  const entries = await readdir(corpusDir);
+  const jsons = entries.filter((f) => f.endsWith('.json'));
+  const cases = await Promise.all(
+    jsons.map(async (f) => {
+      const raw = await readFile(join(corpusDir, f), 'utf-8');
+      return JSON.parse(raw) as HoleCase;
+    }),
+  );
+  return cases;
 }

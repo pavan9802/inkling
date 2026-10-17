@@ -1,4 +1,3 @@
-import { notImplemented } from '../util/errors.js';
 import type { CompletionBackend, CompletionParams, CompletionResult } from './types.js';
 
 export interface OllamaOptions {
@@ -8,11 +7,18 @@ export interface OllamaOptions {
   readonly keepAlive: string;
 }
 
+interface TagsResponse {
+  models: Array<{ name: string }>;
+}
+
+interface GenerateResponse {
+  response: string;
+  done_reason: string;
+}
+
 /**
  * Ollama backend. Talks to `/api/generate` with `raw: true` so our own FIM
  * prompt bypasses server-side templating (ADR-0002).
- *
- * Phase 0: interface only. Phase 1 implements `complete`/`isAvailable`.
  */
 export class OllamaBackend implements CompletionBackend {
   readonly id = 'ollama';
@@ -20,15 +26,43 @@ export class OllamaBackend implements CompletionBackend {
   constructor(private readonly opts: OllamaOptions) {}
 
   async isAvailable(): Promise<boolean> {
-    // TODO(phase-1): GET {endpoint}/api/tags and check the model is present.
-    return notImplemented('OllamaBackend.isAvailable');
+    try {
+      const res = await fetch(`${this.opts.endpoint}/api/tags`);
+      if (!res.ok) return false;
+      const data = (await res.json()) as TagsResponse;
+      return data.models.some((m) => m.name === this.opts.model);
+    } catch {
+      return false;
+    }
   }
 
-  async complete(_params: CompletionParams): Promise<CompletionResult> {
-    // TODO(phase-1): POST {endpoint}/api/generate with
-    //   { model, prompt, raw: true, stream: false, keep_alive,
-    //     options: { temperature, num_predict: maxTokens, stop } }
-    // bridging `signal` to fetch for cancellation.
-    return notImplemented('OllamaBackend.complete');
+  async complete(params: CompletionParams): Promise<CompletionResult> {
+    const res = await fetch(`${this.opts.endpoint}/api/generate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      signal: params.signal,
+      body: JSON.stringify({
+        model: this.opts.model,
+        prompt: params.prompt,
+        raw: true,
+        stream: false,
+        keep_alive: this.opts.keepAlive,
+        options: {
+          temperature: params.temperature,
+          num_predict: params.maxTokens,
+          stop: params.stop,
+        },
+      }),
+    });
+
+    if (!res.ok) {
+      throw new Error(`Ollama /api/generate failed: ${res.status} ${res.statusText}`);
+    }
+
+    const data = (await res.json()) as GenerateResponse;
+    return {
+      text: data.response,
+      stoppedEarly: data.done_reason === 'stop',
+    };
   }
 }

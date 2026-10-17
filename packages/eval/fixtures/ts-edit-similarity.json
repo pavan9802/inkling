@@ -1,0 +1,6 @@
+{
+  "file": "packages/eval/src/metrics.ts",
+  "prefix": "/** 1.0 == identical, 0.0 == maximally different. */\nexport function editSimilarity(a: string, b: string): number {\n",
+  "expected": "  const maxLen = Math.max(a.length, b.length);\n  if (maxLen === 0) return 1;\n  return 1 - levenshtein(a, b) / maxLen;\n",
+  "suffix": "}\n"
+}

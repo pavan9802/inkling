@@ -1,0 +1,8 @@
+{
+  "count": 8,
+  "exactMatchRate": 0.25,
+  "lineExactRate": 0.25,
+  "meanSimilarity": 0.5155830306500508,
+  "p50LatencyMs": 728,
+  "p95LatencyMs": 1350
+}

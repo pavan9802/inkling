@@ -1,0 +1,6 @@
+{
+  "file": "packages/core/src/postprocess/index.ts",
+  "prefix": "/** Cut the completion at the first occurrence of any stop sequence. */\nexport function truncateAtStop(text: string, stops: readonly string[]): string {\n",
+  "expected": "  let cut = text.length;\n  for (const s of stops) {\n    if (s.length === 0) continue;\n    const i = text.indexOf(s);\n    if (i >= 0 && i < cut) cut = i;\n  }\n  return text.slice(0, cut);\n",
+  "suffix": "}\n"
+}

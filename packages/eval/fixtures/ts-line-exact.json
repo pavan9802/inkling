@@ -1,0 +1,6 @@
+{
+  "file": "packages/eval/src/metrics.ts",
+  "prefix": "/** True if the first lines match — the common \"did we get the line right\" check. */\nexport function lineExact(a: string, b: string): boolean {\n",
+  "expected": "  return (a.split('\\n')[0] ?? '') === (b.split('\\n')[0] ?? '');\n",
+  "suffix": "}\n"
+}

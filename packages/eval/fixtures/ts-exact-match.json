@@ -1,0 +1,6 @@
+{
+  "file": "packages/eval/src/metrics.ts",
+  "prefix": "export function exactMatch(a: string, b: string): boolean {\n",
+  "expected": "  return a === b;\n",
+  "suffix": "}\n"
+}

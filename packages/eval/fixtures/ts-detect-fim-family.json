@@ -1,0 +1,6 @@
+{
+  "file": "packages/core/src/prompt/fim-registry.ts",
+  "prefix": "/** Map a model tag to its FIM family, or `undefined` if unknown (UI flags it). */\nexport function detectFimFamily(modelId: string): FimFamily | undefined {\n  const id = modelId.toLowerCase();\n",
+  "expected": "  if (id.includes('qwen')) return 'qwen';\n  if (id.includes('starcoder')) return 'starcoder2';\n  if (id.includes('deepseek')) return 'deepseek';\n  if (id.includes('codellama') || id.includes('code-llama')) return 'codellama';\n  return undefined;\n",
+  "suffix": "}\n"
+}

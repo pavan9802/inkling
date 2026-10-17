@@ -1,0 +1,6 @@
+{
+  "file": "packages/core/src/postprocess/index.ts",
+  "prefix": "/** A completion worth showing must contain non-whitespace. */\nexport function isLowValue(text: string): boolean {\n",
+  "expected": "  return text.trim().length === 0;\n",
+  "suffix": "}\n"
+}

@@ -1,0 +1,6 @@
+{
+  "file": "packages/core/src/language/profiles.ts",
+  "prefix": "/** Return the profile for a language id, or the generic fallback. */\nexport function getLanguageProfile(languageId: string): LanguageProfile {\n",
+  "expected": "  return PROFILES[languageId] ?? GENERIC;\n",
+  "suffix": "}\n"
+}
