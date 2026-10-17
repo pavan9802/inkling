@@ -1,0 +1,27 @@
+{
+  "name": "inkling-monorepo",
+  "private": true,
+  "type": "module",
+  "version": "0.0.0",
+  "description": "Local-first inline code completion for VS Code, powered by a self-hosted LLM.",
+  "license": "MIT",
+  "workspaces": ["packages/*"],
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "typecheck": "tsc -p packages/core/tsconfig.json && tsc -p packages/eval/tsconfig.json && tsc -p packages/extension/tsconfig.json",
+    "test": "bun test packages/core packages/eval",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "build:extension": "bun run --cwd packages/extension build",
+    "package": "bun run --cwd packages/extension package"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "@types/node": "^22.0.0",
+    "@typescript-eslint/eslint-plugin": "^8.8.0",
+    "@typescript-eslint/parser": "^8.8.0",
+    "eslint": "^9.11.0",
+    "prettier": "^3.3.3",
+    "typescript": "^5.6.2"
+  }
+}

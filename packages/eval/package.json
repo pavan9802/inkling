@@ -1,0 +1,13 @@
+{
+  "name": "@inkling/eval",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "bin": { "inkling-eval": "src/cli.ts" },
+  "scripts": {
+    "eval": "bun run src/cli.ts"
+  },
+  "dependencies": {
+    "@inkling/core": "workspace:*"
+  }
+}

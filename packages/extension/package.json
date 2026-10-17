@@ -1,0 +1,42 @@
+{
+  "name": "inkling",
+  "displayName": "Inkling",
+  "description": "Local-first inline code completion powered by a self-hosted LLM (Ollama).",
+  "version": "0.0.1",
+  "publisher": "inkling-dev",
+  "license": "MIT",
+  "engines": { "vscode": "^1.85.0" },
+  "categories": ["Programming Languages", "Machine Learning"],
+  "activationEvents": ["onStartupFinished"],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "commands": [
+      { "command": "inkling.toggle", "title": "Inkling: Toggle Completions" },
+      { "command": "inkling.pickModel", "title": "Inkling: Select Model" }
+    ],
+    "configuration": {
+      "title": "Inkling",
+      "properties": {
+        "inkling.enabled": { "type": "boolean", "default": true },
+        "inkling.profile": { "type": "string", "enum": ["fast", "quality", "custom"], "default": "fast" },
+        "inkling.endpoint": { "type": "string", "default": "http://localhost:11434" },
+        "inkling.model": { "type": "string", "default": "qwen2.5-coder:3b", "scope": "machine-overridable" },
+        "inkling.debounceMs": { "type": "number", "default": 200 },
+        "inkling.temperature": { "type": "number", "default": 0.1 }
+      }
+    }
+  },
+  "scripts": {
+    "build": "bun build ./src/extension.ts --target=node --format=cjs --external=vscode --outfile=dist/extension.js",
+    "package": "bunx @vscode/vsce package --no-dependencies",
+    "test": "node ./out-test/runTests.js"
+  },
+  "dependencies": {
+    "@inkling/core": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.85.0",
+    "@vscode/test-electron": "^2.4.1",
+    "@vscode/vsce": "^3.1.0"
+  }
+}
