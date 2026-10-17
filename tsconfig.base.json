@@ -13,10 +13,9 @@
     "resolveJsonModule": true,
     "skipLibCheck": true,
     "noEmit": true,
-    "baseUrl": ".",
     "paths": {
-      "@inkling/core": ["packages/core/src/index.ts"],
-      "@inkling/core/*": ["packages/core/src/*"]
+      "@inkling/core": ["./packages/core/src/index.ts"],
+      "@inkling/core/*": ["./packages/core/src/*"]
     }
   }
 }
