@@ -150,7 +150,7 @@ export class CompletionPipeline {
    * - In single-line mode, yields once when the line is complete.
    * - Falls back to run() if the backend has no stream() method.
    */
-  async *stream(req: CompletionRequest, signal: AbortSignal): AsyncIterable<PipelineResult> {
+  async *stream(req: CompletionRequest, signal: AbortSignal): AsyncGenerator<PipelineResult> {
     const prepared = await this.prepare(req, signal);
     if (prepared.kind === 'cache') {
       yield prepared.result;

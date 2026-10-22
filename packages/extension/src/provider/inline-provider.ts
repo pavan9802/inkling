@@ -50,19 +50,29 @@ export class InlineProvider implements vscode.InlineCompletionItemProvider {
       workspaceRoot: vscode.workspace.workspaceFolders?.[0]?.uri.fsPath,
     };
 
-    // Stage 4 — pipeline: cache → assemble → prompt → complete → post-process.
+    // Stage 4 — pipeline: streaming path.
+    // pipeline.stream() yields the first complete line in ~150ms, then continues
+    // generating in the background. We take the first yield for ghost text and
+    // drain the rest in a detached task so the pipeline reaches its cache
+    // pre-population step (the "next block ready" pattern).
+    // pipeline.stream() falls back to run() internally if the backend has no
+    // stream method, so no conditional is needed here.
     // Any backend exception (network, unknown model family) returns undefined
     // rather than surfacing an error to the user mid-typing.
-    let result;
+    let firstText: string;
     try {
-      result = await this.getPipeline().run(req, signal);
+      const gen = this.getPipeline().stream(req, signal);
+      const { value, done } = await gen.next();
+      if (done || !value) return undefined;
+      firstText = value.text;
+      // Detached drain — not awaited. Lets the generator run to completion so
+      // the pipeline stores the full completion and pre-populates the cache.
+      void (async () => { for await (const _ of gen) { /* drain */ } })();
     } catch {
       return undefined;
     }
 
-    if (!result) return undefined;
-
-    const item = new vscode.InlineCompletionItem(result.text);
+    const item = new vscode.InlineCompletionItem(firstText);
     return [item];
   }
 
