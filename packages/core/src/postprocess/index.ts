@@ -34,7 +34,17 @@ export function enforceSingleLine(text: string): string {
   return i >= 0 ? text.slice(0, i) : text;
 }
 
-/** A completion worth showing must contain non-whitespace. */
+/** Cap a multi-line completion at `maxLines` lines. */
+export function enforceLineLimit(text: string, maxLines: number): string {
+  return text.split('\n').slice(0, maxLines).join('\n');
+}
+
+/**
+ * A completion worth showing must contain non-whitespace.
+ *
+ * Returning null here prevents the extension from inserting empty ghost text
+ * that shifts the cursor without producing anything visible to the user.
+ */
 export function isLowValue(text: string): boolean {
   return text.trim().length === 0;
 }
