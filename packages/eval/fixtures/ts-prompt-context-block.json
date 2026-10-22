@@ -1,0 +1,6 @@
+{
+  "file": "packages/core/src/prompt/prompt-builder.ts",
+  "prefix": "export function buildContextBlock(snippets: readonly ScoredSnippet[], profile: LanguageProfile): string {\n  if (snippets.length === 0) return '';\n  const c = profile.lineComment;\n",
+  "expected": "  return snippets.map((s) => `${c} source: ${s.sourcePath}\\n${s.text}`).join('\\n\\n');\n",
+  "suffix": "}\n"
+}

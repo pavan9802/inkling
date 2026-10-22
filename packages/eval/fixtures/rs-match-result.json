@@ -1,0 +1,6 @@
+{
+  "file": "examples/parse.rs",
+  "prefix": "fn parse_port(s: &str) -> Result<u16, String> {\n    match s.parse::<u16>() {\n",
+  "expected": "        Ok(port) => Ok(port),\n        Err(e) => Err(format!(\"invalid port '{}': {}\", s, e)),\n",
+  "suffix": "    }\n}\n"
+}

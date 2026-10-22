@@ -1,0 +1,6 @@
+{
+  "file": "examples/direction.rs",
+  "prefix": "#[derive(Debug, Clone, Copy, PartialEq)]\npub enum Direction {\n    North,\n    South,\n    East,\n    West,\n}\n\nimpl Direction {\n    pub fn opposite(&self) -> Direction {\n        match self {\n            Direction::North => Direction::South,\n            Direction::South => Direction::North,\n",
+  "expected": "            Direction::East => Direction::West,\n            Direction::West => Direction::East,\n",
+  "suffix": "        }\n    }\n}\n"
+}

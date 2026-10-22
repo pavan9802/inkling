@@ -1,0 +1,6 @@
+{
+  "file": "examples/transform.rs",
+  "prefix": "fn even_squares(nums: &[i32]) -> Vec<i32> {\n",
+  "expected": "    nums.iter()\n        .filter(|&&n| n % 2 == 0)\n        .map(|&n| n * n)\n        .collect()\n",
+  "suffix": "}\n"
+}

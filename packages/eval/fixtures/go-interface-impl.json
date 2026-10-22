@@ -1,0 +1,6 @@
+{
+  "file": "examples/shapes.go",
+  "prefix": "type Rectangle struct {\n\tWidth  float64\n\tHeight float64\n}\n\nfunc (r Rectangle) Area() float64 {\n",
+  "expected": "\treturn r.Width * r.Height\n",
+  "suffix": "}\n\nfunc (r Rectangle) Perimeter() float64 {\n"
+}

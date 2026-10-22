@@ -1,0 +1,6 @@
+{
+  "file": "examples/stats.py",
+  "prefix": "def count_words(text: str) -> dict[str, int]:\n    \"\"\"Count occurrences of each word in text.\"\"\"\n    counts: dict[str, int] = {}\n",
+  "expected": "    for word in text.split():\n        counts[word] = counts.get(word, 0) + 1\n    return counts\n",
+  "suffix": ""
+}

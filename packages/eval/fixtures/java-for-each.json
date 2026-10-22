@@ -1,0 +1,6 @@
+{
+  "file": "examples/Processor.java",
+  "prefix": "public int sumList(List<Integer> numbers) {\n    int total = 0;\n    for (int n : numbers) {\n",
+  "expected": "        total += n;\n",
+  "suffix": "    }\n    return total;\n}\n"
+}

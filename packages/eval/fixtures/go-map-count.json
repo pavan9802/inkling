@@ -1,0 +1,6 @@
+{
+  "file": "examples/words.go",
+  "prefix": "func countWords(text string) map[string]int {\n\tcounts := make(map[string]int)\n\tfor _, word := range strings.Fields(text) {\n",
+  "expected": "\t\tcounts[word]++\n",
+  "suffix": "\t}\n\treturn counts\n}\n"
+}

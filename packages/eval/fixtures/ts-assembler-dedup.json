@@ -1,0 +1,6 @@
+{
+  "file": "packages/core/src/context/assembler.ts",
+  "prefix": "function dedupeByText(snippets: readonly Ranked[]): Ranked[] {\n",
+  "expected": "  const seen = new Set<string>();\n  const out: Ranked[] = [];\n  for (const s of snippets) {\n    const key = s.text.trim();\n    if (key.length === 0 || seen.has(key)) continue;\n    seen.add(key);\n    out.push(s);\n  }\n  return out;\n",
+  "suffix": "}\n"
+}

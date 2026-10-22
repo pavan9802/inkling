@@ -1,0 +1,6 @@
+{
+  "file": "packages/core/src/pipeline/cache.ts",
+  "prefix": "  private key(prefix: string, suffix: string): string {\n    // \\x00 is a safe separator: it cannot appear in valid source code, so\n    // `prefix + suffix` concatenations can never produce a false key collision.\n",
+  "expected": "    return `${prefix}\\x00${suffix}`;\n",
+  "suffix": "  }\n"
+}

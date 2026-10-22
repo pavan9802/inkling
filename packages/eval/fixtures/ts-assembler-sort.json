@@ -1,0 +1,6 @@
+{
+  "file": "packages/core/src/context/assembler.ts",
+  "prefix": "    const ranked = dedupeByText(gathered.flat());\n",
+  "expected": "    ranked.sort((a, b) => b.priority - a.priority || b.score - a.score);\n",
+  "suffix": "\n    const chosen: ScoredSnippet[] = [];\n"
+}

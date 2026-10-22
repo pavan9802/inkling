@@ -1,0 +1,6 @@
+{
+  "file": "examples/point.rs",
+  "prefix": "use std::fmt;\n\npub struct Point {\n    pub x: f64,\n    pub y: f64,\n}\n\nimpl fmt::Display for Point {\n    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {\n",
+  "expected": "        write!(f, \"({}, {})\", self.x, self.y)\n",
+  "suffix": "    }\n}\n"
+}

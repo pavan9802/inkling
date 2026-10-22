@@ -1,0 +1,6 @@
+{
+  "file": "packages/core/src/pipeline/cache.ts",
+  "prefix": "    const entry = this.store.get(k);\n    if (!entry) return undefined;\n",
+  "expected": "    if (Date.now() > entry.expiresAt) {\n      this.store.delete(k);\n      return undefined;\n    }\n    return entry.text;\n",
+  "suffix": "  }\n"
+}

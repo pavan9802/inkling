@@ -1,0 +1,6 @@
+{
+  "file": "packages/core/src/postprocess/index.ts",
+  "prefix": "export function isLowValue(text: string): boolean {\n  return text.trim().length =",
+  "expected": "= 0;\n",
+  "suffix": "}\n"
+}

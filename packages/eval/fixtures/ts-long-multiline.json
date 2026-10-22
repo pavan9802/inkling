@@ -1,0 +1,6 @@
+{
+  "file": "packages/core/src/pipeline/index.ts",
+  "prefix": "  async run(req: CompletionRequest, signal: AbortSignal): Promise<PipelineResult | null> {\n    const t0 = Date.now();\n",
+  "expected": "    const config = this.getConfig();\n\n    const cached = this.cache.get(req.prefix, req.suffix);\n    if (cached !== undefined) {\n      this.lastPrefix = req.prefix;\n      this.lastSuffix = req.suffix;\n      return { text: cached, fromCache: true, latencyMs: 0 };\n    }\n\n    if (this.lastPrefix !== undefined && this.lastSuffix !== undefined) {\n      const typed = this.cache.tryTypedThrough(req.prefix, this.lastPrefix, req.suffix);\n      if (typed !== undefined) {\n        this.cache.set(req.prefix, req.suffix, typed);\n        this.lastPrefix = req.prefix;\n        this.lastSuffix = req.suffix;\n        return { text: typed, fromCache: true, latencyMs: 0 };\n      }\n    }\n",
+  "suffix": "\n    const snippets = await this.assembler.assemble(req, {\n"
+}

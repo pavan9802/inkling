@@ -1,0 +1,6 @@
+{
+  "file": "examples/StreamExample.java",
+  "prefix": "public List<String> getActiveUserNames(List<User> users) {\n",
+  "expected": "    return users.stream()\n        .filter(User::isActive)\n        .map(User::getName)\n        .collect(Collectors.toList());\n",
+  "suffix": "}\n"
+}

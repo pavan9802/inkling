@@ -1,0 +1,6 @@
+{
+  "file": "examples/main.py",
+  "prefix": "def main() -> None:\n    parser = argparse.ArgumentParser(description='Process files')\n    parser.add_argument('input', help='Input file path')\n    parser.add_argument('-o', '--output', help='Output file path')\n    args = parser.parse_args()\n",
+  "expected": "    process(args.input, args.output)\n",
+  "suffix": ""
+}

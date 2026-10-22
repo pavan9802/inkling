@@ -1,0 +1,6 @@
+{
+  "file": "examples/main.go",
+  "prefix": "func main() {\n\tif err := run(); err != nil {\n\t\tfmt.Fprintf(os.Stderr, \"error: %v\\n\", err)\n",
+  "expected": "\t\tos.Exit(1)\n",
+  "suffix": "\t}\n}\n"
+}

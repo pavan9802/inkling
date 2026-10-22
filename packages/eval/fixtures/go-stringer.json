@@ -1,0 +1,6 @@
+{
+  "file": "examples/status.go",
+  "prefix": "type Status int\n\nconst (\n\tStatusPending Status = iota\n\tStatusRunning\n\tStatusDone\n)\n\nfunc (s Status) String() string {\n\tswitch s {\n\tcase StatusPending:\n\t\treturn \"pending\"\n\tcase StatusRunning:\n\t\treturn \"running\"\n\tcase StatusDone:\n\t\treturn \"done\"\n",
+  "expected": "\tdefault:\n\t\treturn \"unknown\"\n",
+  "suffix": "\t}\n}\n"
+}

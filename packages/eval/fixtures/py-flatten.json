@@ -1,0 +1,6 @@
+{
+  "file": "examples/nested.py",
+  "prefix": "def flatten(nested: list) -> list:\n    \"\"\"Recursively flatten a nested list.\"\"\"\n    result = []\n    for item in nested:\n",
+  "expected": "        if isinstance(item, list):\n            result.extend(flatten(item))\n        else:\n            result.append(item)\n    return result\n",
+  "suffix": ""
+}

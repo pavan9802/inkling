@@ -1,0 +1,6 @@
+{
+  "file": "examples/io_utils.py",
+  "prefix": "def read_lines(path: str) -> list[str]:\n    \"\"\"Read a file and return its lines stripped of trailing whitespace.\"\"\"\n",
+  "expected": "    with open(path, 'r') as f:\n        return [line.rstrip() for line in f]\n",
+  "suffix": ""
+}

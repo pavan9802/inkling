@@ -1,0 +1,6 @@
+{
+  "file": "packages/core/src/context/assembler.ts",
+  "prefix": "    const chosen: ScoredSnippet[] = [];\n    let used = 0;\n",
+  "expected": "    for (const snippet of ranked) {\n      if (used + snippet.text.length > opts.budgetChars) continue;\n      used += snippet.text.length;\n      chosen.push(toSnippet(snippet));\n    }\n    return chosen;\n",
+  "suffix": "  }\n"
+}

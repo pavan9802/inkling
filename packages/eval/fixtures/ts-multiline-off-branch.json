@@ -1,0 +1,6 @@
+{
+  "file": "packages/core/src/language/multiline.ts",
+  "prefix": "  if (configMode === 'always') {\n    return { multiline: true, stopSequences: profile.stopSequences, maxLines: profile.maxMultilineLines };\n  }\n",
+  "expected": "  if (configMode === 'off') {\n    return { multiline: false, stopSequences: ['\\n'], maxLines: 1 };\n  }\n",
+  "suffix": "\n  const tail = prefix.trimEnd();\n"
+}

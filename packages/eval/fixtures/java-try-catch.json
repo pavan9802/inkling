@@ -1,0 +1,6 @@
+{
+  "file": "examples/FileReader.java",
+  "prefix": "public String readFile(String path) throws IOException {\n    try (BufferedReader reader = new BufferedReader(new FileReader(path))) {\n",
+  "expected": "        StringBuilder sb = new StringBuilder();\n        String line;\n        while ((line = reader.readLine()) != null) {\n            sb.append(line).append('\\n');\n        }\n        return sb.toString();\n",
+  "suffix": "    }\n}\n"
+}

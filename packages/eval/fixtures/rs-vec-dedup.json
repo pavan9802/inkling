@@ -1,0 +1,6 @@
+{
+  "file": "examples/collections.rs",
+  "prefix": "fn deduplicate(mut v: Vec<i32>) -> Vec<i32> {\n    v.sort();\n",
+  "expected": "    v.dedup();\n    v\n",
+  "suffix": "}\n"
+}

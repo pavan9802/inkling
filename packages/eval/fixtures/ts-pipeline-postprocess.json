@@ -1,0 +1,6 @@
+{
+  "file": "packages/core/src/pipeline/index.ts",
+  "prefix": "    let text = truncateAtStop(result.text, mode.stopSequences);\n",
+  "expected": "    text = trimSuffixOverlap(text, req.suffix);\n    text = mode.multiline ? enforceLineLimit(text, mode.maxLines) : enforceSingleLine(text);\n",
+  "suffix": "\n    if (isLowValue(text)) return null;\n"
+}

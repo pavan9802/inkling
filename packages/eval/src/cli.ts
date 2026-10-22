@@ -22,6 +22,9 @@ function langFromFile(file: string): string {
   if (file.endsWith('.jsx')) return 'javascriptreact';
   if (file.endsWith('.js')) return 'javascript';
   if (file.endsWith('.java')) return 'java';
+  if (file.endsWith('.py')) return 'python';
+  if (file.endsWith('.go')) return 'go';
+  if (file.endsWith('.rs')) return 'rust';
   return 'generic';
 }
 

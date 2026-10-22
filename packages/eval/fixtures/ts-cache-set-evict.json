@@ -1,0 +1,6 @@
+{
+  "file": "packages/core/src/pipeline/cache.ts",
+  "prefix": "  set(prefix: string, suffix: string, completion: string): void {\n    const k = this.key(prefix, suffix);\n",
+  "expected": "    if (this.store.size >= this.maxSize && !this.store.has(k)) {\n      const oldest = this.store.keys().next().value;\n      if (oldest !== undefined) this.store.delete(oldest);\n    }\n    this.store.set(k, { text: completion, expiresAt: Date.now() + this.ttlMs });\n",
+  "suffix": "  }\n"
+}

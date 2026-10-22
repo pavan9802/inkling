@@ -1,0 +1,6 @@
+{
+  "file": "packages/core/src/pipeline/index.ts",
+  "prefix": "    if (isLowValue(text)) return null;\n\n    // Step 8: store and update typed-through state.\n",
+  "expected": "    this.cache.set(req.prefix, req.suffix, text);\n    this.lastPrefix = req.prefix;\n    this.lastSuffix = req.suffix;\n",
+  "suffix": "\n    return { text, fromCache: false, latencyMs: Date.now() - t0 };\n"
+}

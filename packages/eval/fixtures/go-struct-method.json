@@ -1,0 +1,6 @@
+{
+  "file": "examples/server.go",
+  "prefix": "type Server struct {\n\thost string\n\tport int\n}\n\nfunc (s *Server) Addr() string {\n",
+  "expected": "\treturn fmt.Sprintf(\"%s:%d\", s.host, s.port)\n",
+  "suffix": "}\n"
+}

@@ -1,0 +1,6 @@
+{
+  "file": "examples/db.go",
+  "prefix": "func queryDB(db *sql.DB, query string) (*sql.Rows, error) {\n\trows, err := db.Query(query)\n\tif err != nil {\n\t\treturn nil, err\n\t}\n",
+  "expected": "\tdefer rows.Close()\n\treturn rows, nil\n",
+  "suffix": "}\n"
+}

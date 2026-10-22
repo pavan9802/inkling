@@ -1,0 +1,6 @@
+{
+  "file": "examples/lookup.rs",
+  "prefix": "fn find_first_even(nums: &[i32]) -> Option<i32> {\n",
+  "expected": "    nums.iter().find(|&&n| n % 2 == 0).copied()\n",
+  "suffix": "}\n"
+}

@@ -1,0 +1,6 @@
+{
+  "file": "examples/User.java",
+  "prefix": "public class User {\n    private final String name;\n    private final String email;\n\n    public User(String name, String email) {\n",
+  "expected": "        this.name = name;\n        this.email = email;\n",
+  "suffix": "    }\n\n    public String getName() {\n"
+}

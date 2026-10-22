@@ -1,0 +1,6 @@
+{
+  "file": "examples/io.go",
+  "prefix": "func readFile(path string) ([]byte, error) {\n\tdata, err := os.ReadFile(path)\n",
+  "expected": "\tif err != nil {\n\t\treturn nil, fmt.Errorf(\"readFile %s: %w\", path, err)\n\t}\n\treturn data, nil\n",
+  "suffix": "}\n"
+}

@@ -1,0 +1,6 @@
+{
+  "file": "examples/models.py",
+  "prefix": "class User:\n    def __init__(self, name: str, email: str, age: int) -> None:\n",
+  "expected": "        self.name = name\n        self.email = email\n        self.age = age\n",
+  "suffix": "\n    def __repr__(self) -> str:\n"
+}

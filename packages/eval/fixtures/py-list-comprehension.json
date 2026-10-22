@@ -1,0 +1,6 @@
+{
+  "file": "examples/utils.py",
+  "prefix": "def get_even_squares(numbers: list[int]) -> list[int]:\n    \"\"\"Return the squares of all even numbers in the list.\"\"\"\n",
+  "expected": "    return [n * n for n in numbers if n % 2 == 0]\n",
+  "suffix": ""
+}

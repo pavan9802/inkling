@@ -1,0 +1,6 @@
+{
+  "file": "examples/Product.java",
+  "prefix": "public class Product {\n    private String name;\n    private double price;\n\n    public String getName() {\n        return name;\n    }\n\n    public void setName(String name) {\n",
+  "expected": "        this.name = name;\n",
+  "suffix": "    }\n\n    public double getPrice() {\n"
+}

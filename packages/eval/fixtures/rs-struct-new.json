@@ -1,0 +1,6 @@
+{
+  "file": "examples/config.rs",
+  "prefix": "pub struct Config {\n    pub host: String,\n    pub port: u16,\n    pub timeout_ms: u64,\n}\n\nimpl Config {\n    pub fn new(host: impl Into<String>, port: u16) -> Self {\n",
+  "expected": "        Self {\n            host: host.into(),\n            port,\n            timeout_ms: 5000,\n        }\n",
+  "suffix": "    }\n}\n"
+}

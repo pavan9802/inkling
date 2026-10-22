@@ -1,0 +1,6 @@
+{
+  "file": "packages/core/src/util/errors.ts",
+  "prefix": "/** Narrow an unknown catch value to Error. */\nexport function toError(e: unknown): Error {\n  if (e instanceof Error) return e;\n",
+  "expected": "  return new Error(String(e));\n",
+  "suffix": ""
+}

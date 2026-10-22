@@ -1,0 +1,6 @@
+{
+  "file": "examples/filter.go",
+  "prefix": "func filter(nums []int, pred func(int) bool) []int {\n\tresult := make([]int, 0, len(nums))\n\tfor _, n := range nums {\n",
+  "expected": "\t\tif pred(n) {\n\t\t\tresult = append(result, n)\n\t\t}\n",
+  "suffix": "\t}\n\treturn result\n}\n"
+}

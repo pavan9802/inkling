@@ -1,0 +1,6 @@
+{
+  "file": "packages/extension/src/provider/inline-provider.ts",
+  "prefix": "import * as vscode from 'vscode';\nimport { type CompletionRequest, type CompletionPipeline, type ResolvedConfig } from '@inkling/core';\n",
+  "expected": "import { Debouncer } from './debouncer.js';\nimport { GateChecker } from './gate-checker.js';\n",
+  "suffix": "\nexport class InlineProvider implements vscode.InlineCompletionItemProvider {\n"
+}

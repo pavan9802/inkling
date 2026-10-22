@@ -1,0 +1,6 @@
+{
+  "file": "examples/lib.rs",
+  "prefix": "pub fn clamp(value: f64, min: f64, max: f64) -> f64 {\n",
+  "expected": "    value.max(min).min(max)\n",
+  "suffix": ""
+}
