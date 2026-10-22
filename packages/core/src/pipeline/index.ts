@@ -2,6 +2,7 @@ import type { CompletionRequest } from '../context/types.js';
 import type { ContextAssembler } from '../context/assembler.js';
 import type { CompletionBackend } from '../backend/types.js';
 import type { ResolvedConfig } from '../config/types.js';
+import type { CompletionMode } from '../language/multiline.js';
 import { getLanguageProfile } from '../language/profiles.js';
 import { resolveCompletionMode } from '../language/multiline.js';
 import { detectFimFamily } from '../prompt/fim-registry.js';
@@ -43,7 +44,18 @@ export class CompletionPipeline {
     private readonly getConfig: () => ResolvedConfig,
   ) {}
 
-  async run(req: CompletionRequest, signal: AbortSignal): Promise<PipelineResult | null> {
+  /**
+   * Shared setup for run() and stream(): cache checks, context assembly, and
+   * prompt construction. Returns either an immediate cache result or everything
+   * needed to call the backend. Extracted to avoid duplicating ~40 lines.
+   */
+  private async prepare(
+    req: CompletionRequest,
+    signal: AbortSignal,
+  ): Promise<
+    | { kind: 'cache'; result: PipelineResult }
+    | { kind: 'ready'; config: ResolvedConfig; mode: CompletionMode; prompt: string; t0: number }
+  > {
     const t0 = Date.now();
     // Step 1: snapshot config once — keeps all steps consistent even if VS
     // Code settings change mid-completion.
@@ -54,19 +66,19 @@ export class CompletionPipeline {
     if (cached !== undefined) {
       this.lastPrefix = req.prefix;
       this.lastSuffix = req.suffix;
-      return { text: cached, fromCache: true, latencyMs: 0 };
+      return { kind: 'cache', result: { text: cached, fromCache: true, latencyMs: 0 } };
     }
 
     // Step 2b: typed-through — user accepted the first character of the last
-    // suggestion. No round-trip needed; we trim the cached text and re-store
-    // it so the next keystroke can chain another typed-through.
+    // suggestion. No round-trip needed; we trim and re-store so subsequent
+    // keystrokes can chain further typed-through detections.
     if (this.lastPrefix !== undefined && this.lastSuffix !== undefined) {
       const typed = this.cache.tryTypedThrough(req.prefix, this.lastPrefix, req.suffix);
       if (typed !== undefined) {
         this.cache.set(req.prefix, req.suffix, typed);
         this.lastPrefix = req.prefix;
         this.lastSuffix = req.suffix;
-        return { text: typed, fromCache: true, latencyMs: 0 };
+        return { kind: 'cache', result: { text: typed, fromCache: true, latencyMs: 0 } };
       }
     }
 
@@ -89,6 +101,15 @@ export class CompletionPipeline {
     if (!family) throw new Error(`Unknown FIM family for model "${config.model}"`);
 
     const prompt = buildCompletionPrompt({ req, snippets, profile, family });
+
+    return { kind: 'ready', config, mode, prompt, t0 };
+  }
+
+  async run(req: CompletionRequest, signal: AbortSignal): Promise<PipelineResult | null> {
+    const prepared = await this.prepare(req, signal);
+    if (prepared.kind === 'cache') return prepared.result;
+
+    const { config, mode, prompt, t0 } = prepared;
 
     // Step 6: call the backend. stop sequences come from mode, not the profile
     // directly — single-line positions stop at \n, not \n\n.
@@ -118,5 +139,97 @@ export class CompletionPipeline {
     this.lastSuffix = req.suffix;
 
     return { text, fromCache: false, latencyMs: Date.now() - t0 };
+  }
+
+  /**
+   * Streaming variant of run(). Yields results progressively as tokens arrive:
+   * - Cache hits yield once immediately (same as run()).
+   * - In multiline mode, yields after each completed line so the InlineProvider
+   *   can show the first line of ghost text in ~150ms, then drain the rest in
+   *   the background to pre-populate the cache (the "next block ready" pattern).
+   * - In single-line mode, yields once when the line is complete.
+   * - Falls back to run() if the backend has no stream() method.
+   */
+  async *stream(req: CompletionRequest, signal: AbortSignal): AsyncIterable<PipelineResult> {
+    const prepared = await this.prepare(req, signal);
+    if (prepared.kind === 'cache') {
+      yield prepared.result;
+      return;
+    }
+
+    const { config, mode, prompt, t0 } = prepared;
+
+    // Fallback: backend doesn't support streaming, delegate to run().
+    if (!this.backend.stream) {
+      const result = await this.run(req, signal);
+      if (result) yield result;
+      return;
+    }
+
+    // Step 6: stream from backend, accumulate tokens, yield on meaningful boundaries.
+    let accumulated = '';
+
+    for await (const chunk of this.backend.stream({
+      prompt,
+      stop: [...mode.stopSequences],
+      maxTokens: config.budgets.maxOutputTokens,
+      temperature: config.temperature,
+      signal,
+    })) {
+      accumulated += chunk;
+
+      // Safety net: backend stop param is the primary guard, but the model can
+      // emit a continuation token before the server honours it.
+      const truncated = truncateAtStop(accumulated, mode.stopSequences);
+      if (truncated.length < accumulated.length) {
+        accumulated = truncated;
+        break;
+      }
+
+      // Multiline: yield after each completed line so the InlineProvider can
+      // show partial results; stop when the line budget is exhausted.
+      if (mode.multiline) {
+        const completedLines = accumulated.split('\n').length - 1;
+        if (completedLines >= mode.maxLines) {
+          accumulated = enforceLineLimit(accumulated, mode.maxLines);
+          break;
+        }
+        // chunk contains '\n' → a new line just finished; give the provider something to show.
+        if (chunk.includes('\n')) {
+          const text = trimSuffixOverlap(accumulated, req.suffix);
+          if (!isLowValue(text)) {
+            yield { text, fromCache: false, latencyMs: Date.now() - t0 };
+          }
+        }
+      }
+    }
+
+    // Step 7: post-process the final accumulated text.
+    let finalText = trimSuffixOverlap(accumulated, req.suffix);
+    finalText = mode.multiline ? enforceLineLimit(finalText, mode.maxLines) : enforceSingleLine(finalText);
+
+    if (isLowValue(finalText)) return;
+
+    // Yield the final result. In single-line mode this is the only yield.
+    // In multiline mode this supersedes any intermediate yields (it may be
+    // identical to the last intermediate, which is fine — caller ignores dupes).
+    yield { text: finalText, fromCache: false, latencyMs: Date.now() - t0 };
+
+    // Step 8: store and update typed-through state.
+    this.cache.set(req.prefix, req.suffix, finalText);
+    this.lastPrefix = req.prefix;
+    this.lastSuffix = req.suffix;
+
+    // Pre-populate cache for the "next block after acceptance" pattern:
+    // when the user accepts the first line and presses Enter, the next
+    // invocation's typed-through check finds the rest in cache instantly.
+    const firstLine = enforceSingleLine(finalText);
+    if (firstLine !== finalText) {
+      // Rest includes the leading '\n' so typed-through fires on the Enter keypress.
+      const rest = finalText.slice(firstLine.length);
+      if (!isLowValue(rest)) {
+        this.cache.set(req.prefix + firstLine, req.suffix, rest);
+      }
+    }
   }
 }
