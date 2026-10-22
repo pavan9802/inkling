@@ -6,7 +6,14 @@
  * Usage: bun run src/cli.ts --corpus ./fixtures --model qwen2.5-coder:3b
  *        bun run src/cli.ts --corpus ./fixtures --model qwen2.5-coder:3b --endpoint http://localhost:11434
  */
-import { OllamaBackend, defaultConfigForProfile, detectFimFamily, getLanguageProfile, buildCompletionPrompt, truncateAtStop, trimSuffixOverlap, isLowValue } from '@inkling/core';
+import {
+  OllamaBackend,
+  ContextAssembler,
+  CompletionPipeline,
+  defaultConfigForProfile,
+  getLanguageProfile,
+  type CompletionRequest,
+} from '@inkling/core';
 import { loadCases, scoreCase, aggregate, type CaseResult } from './harness.js';
 
 function langFromFile(file: string): string {
@@ -47,13 +54,6 @@ function parseArgs(argv: readonly string[]): Args {
 async function main(argv: readonly string[]): Promise<void> {
   const args = parseArgs(argv);
 
-  // --- step 2: object graph ---
-  const family = detectFimFamily(args.model);
-  if (!family) {
-    console.error(`Unknown FIM family for model "${args.model}". Supported: qwen, starcoder2, deepseek, codellama.`);
-    process.exit(1);
-  }
-
   const config = defaultConfigForProfile('fast');
   const backend = new OllamaBackend({ endpoint: args.endpoint, model: args.model, keepAlive: '30m' });
 
@@ -62,7 +62,10 @@ async function main(argv: readonly string[]): Promise<void> {
     process.exit(1);
   }
 
-  // --- step 3: load cases ---
+  // No cross-file context for the baseline eval — empty retriever list.
+  const assembler = new ContextAssembler([]);
+  const pipeline = new CompletionPipeline(assembler, backend, () => ({ ...config, model: args.model }));
+
   const cases = await loadCases(args.corpus);
   if (cases.length === 0) {
     console.error(`No fixture files found in "${args.corpus}". Add .json cases first.`);
@@ -70,55 +73,39 @@ async function main(argv: readonly string[]): Promise<void> {
   }
   console.error(`Loaded ${cases.length} case(s) from ${args.corpus}`);
 
-  // --- step 4: run each case ---
   const results: CaseResult[] = [];
 
   for (const c of cases) {
     const langProfile = getLanguageProfile(langFromFile(c.file));
-    const prompt = buildCompletionPrompt({
-      req: { uri: c.file, languageId: langProfile.id, prefix: c.prefix, suffix: c.suffix },
-      snippets: [], // baseline: no cross-file context
-      profile: langProfile,
-      family,
-    });
+    const req: CompletionRequest = {
+      uri: c.file,
+      languageId: langProfile.id,
+      prefix: c.prefix,
+      suffix: c.suffix,
+    };
 
     const controller = new AbortController();
     const start = Date.now();
-    let rawText: string;
+    let produced: string;
     try {
-      const result = await backend.complete({
-        prompt,
-        stop: langProfile.stopSequences,
-        maxTokens: config.budgets.maxOutputTokens,
-        temperature: config.temperature,
-        signal: controller.signal,
-      });
-      rawText = result.text;
+      const result = await pipeline.run(req, controller.signal);
+      if (!result) {
+        console.error(`  [skip] ${c.file}: low-value completion`);
+        continue;
+      }
+      produced = result.text;
     } catch (err) {
       console.error(`  [skip] ${c.file}: ${err}`);
       continue;
     }
     const latencyMs = Date.now() - start;
 
-    const produced = trimSuffixOverlap(
-      truncateAtStop(rawText, langProfile.stopSequences),
-      c.suffix,
-    );
-
-    if (isLowValue(produced)) {
-      console.error(`  [skip] ${c.file}: low-value completion`);
-      continue;
-    }
-
-    const result = scoreCase(c, produced, latencyMs);
-    results.push(result);
-    console.error(`  [${results.length}/${cases.length}] ${c.file} — ${(result.similarity * 100).toFixed(1)}% similarity`);
+    const scored = scoreCase(c, produced, latencyMs);
+    results.push(scored);
+    console.error(`  [${results.length}/${cases.length}] ${c.file} — ${(scored.similarity * 100).toFixed(1)}% similarity`);
   }
 
-  // --- step 5: aggregate ---
   const report = aggregate(results);
-
-  // --- step 6: print ---
   console.log(JSON.stringify(report, null, 2));
 }
 
