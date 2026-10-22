@@ -33,6 +33,16 @@ latency gate, since the budget is defined there.
 - **Quality gate:** a phase passes if `meanSimilarity` (or `lineExactRate`)
   improves over the previous phase by ≥ 2 points, with no latency-gate failure.
 
+## Comparing model routing (planned, ADR-0008)
+Adaptive model routing is judged against a **fixed-model baseline** on the same
+fixtures, budgets and temperature. Once the CLI supports it:
+- Run the fixed baseline per candidate model, then the routed configuration.
+- Read results per model, language and fixture `category`, not just the overall
+  mean — a router can win on average while regressing one category.
+- Check p95 against the active profile's latency target, and record how often
+  each model was chosen and how often a fallback fired.
+- Feed the per-model stats back into the routing candidates' `stats`.
+
 ## If the CLI is still stubbed
 The Phase-0 CLI (`packages/eval/src/cli.ts`) is a stub. Implement before first
 use: parse flags → `loadCases(corpus)` → for each case build the prompt

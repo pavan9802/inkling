@@ -1,7 +1,7 @@
 # Inkling — Design Document
 
 > Local-first inline code completion for VS Code, powered by a self-hosted LLM (Ollama).
-> Status: **pre-implementation** (architecture only). Last updated: 2026-10-17.
+> Status: **pre-implementation** (architecture only). Last updated: 2026-10-21.
 
 This document is the single source of truth for *why* Inkling is built the way it is.
 Decisions with lasting consequences are captured as ADRs under `docs/adr/` and referenced inline.
@@ -32,11 +32,12 @@ The guiding rule of the whole project:
 
 > **Every capability we'll want later gets its interface defined now, even if only the cheapest implementation ships first.**
 
-Concretely this means three seams exist from the first commit:
+Concretely this means three seams exist from the first commit, with a fourth proposed:
 
 1. **`ContextRetriever`** — anything that supplies cross-file context (open tabs → LSP → workspace index → embeddings) is just a new implementation behind one interface. See ADR-0003.
 2. **`CompletionBackend`** — Ollama is first; llama.cpp and any OpenAI-compatible server are future implementations behind one interface. See ADR-0007.
 3. **`ResolvedConfig` + profiles** — all tuning flows through one resolved config object, so new settings are additive and never ripple into core logic. See ADR-0006.
+4. **`ModelRouter`** *(proposed)* — picks which model candidate serves a request. The default `FixedRouter` always returns the configured model; adaptive policies are new implementations behind the same interface. See ADR-0008 and §8.1.
 
 Getting these seams right now is the difference between "add a feature" and "rewrite" later.
 
@@ -67,6 +68,7 @@ The crucial consequence: **`core` is testable and benchmarkable without VS Code.
           │                   core                        │
           │  ContextAssembler · PromptBuilder · FIM reg.  │
           │  CompletionBackend · PostProcessor · Config   │
+          │  ModelRouter (proposed, ADR-0008)             │
           └───────▲───────────────────────────▲──────────┘
                   │ implements                 │ implements
         ┌─────────┴─────────┐        ┌─────────┴──────────┐
@@ -91,29 +93,34 @@ VS Code invokes InlineCompletionItemProvider
 [3] Cache        hash(prefix, suffix) → recent result? typed-through detection  ──► serve from cache
         │
         ▼
-[4] Context      ContextAssembler runs all retrievers in parallel under a hard deadline,
-                 dedupes, scores, fills a token budget by priority → ordered context block
+[4] Route        ModelRouter picks a model candidate from cheap request signals
+                 (FixedRouter = configured model; adaptive routing is opt-in, ADR-0008)
         │
         ▼
-[5] Prompt       PromptBuilder emits a FIM prompt: [context] + [file prefix] + [suffix]
-                 using the active model family's template (FIM registry)
+[5] Context      ContextAssembler runs all retrievers in parallel under a hard deadline,
+                 dedupes, scores, fills the candidate's token budget by priority → ordered context block
         │
         ▼
-[6] Backend      CompletionBackend (Ollama) → /api/generate with raw FIM prompt,
+[6] Prompt       PromptBuilder emits a FIM prompt: [context] + [file prefix] + [suffix]
+                 using the selected candidate's family template (FIM registry)
+        │
+        ▼
+[7] Backend      the candidate's CompletionBackend (Ollama) → /api/generate with raw FIM prompt,
                  stop tokens, num_predict cap, low temperature, keep_alive
         │
         ▼
-[7] Post-process trim suffix overlap · single/multi-line enforcement · bracket balance ·
+[8] Post-process trim suffix overlap · single/multi-line enforcement · bracket balance ·
                  dedent · drop empty/repetitive · truncate at stop
         │
         ▼
-[8] Present      InlineCompletionItem (ghost text)
+[9] Present      InlineCompletionItem (ghost text)
         │
         ▼
-[9] Metrics      record latency + shown; acceptance recorded on accept command (local only)
+[10] Metrics     record latency, shown, selected model + routing reason;
+                 acceptance recorded on accept command (local only)
 ```
 
-Steps 4–7 live entirely in `core`. Steps 1–3, 8 and the VS Code-backed half of 4 live in `extension`.
+Steps 4–8 live entirely in `core`, in one shared pipeline function that both the extension and the eval CLI call (so eval measures exactly what users get). Steps 1–3, 9 and the VS Code-backed half of 5 live in `extension`.
 
 ---
 
@@ -208,6 +215,7 @@ Ghost text feels broken much above ~1s. Levers, in order of impact:
 - **Debounce + cancellation**: a VS Code `CancellationToken` is bridged to an `AbortController` so superseded requests are actually aborted at the HTTP layer, not just ignored.
 - **Completion cache** keyed on `(prefixHash, suffixHash)` with typed-through detection (if the user types exactly what we suggested, don't re-request).
 - **Streaming** (Phase 2): stream tokens from Ollama and update the inline item progressively to cut *perceived* latency for multi-line blocks.
+- **Model stickiness** (ADR-0008): when adaptive routing is on, prefer the model that is already resident and was used last. A cold model load costs seconds, and Ollama's prompt cache is per model, so switching models undoes the two levers above. Switch only on a strong signal.
 
 **Latency targets** (to be baselined in Phase 0 on the 3B/Mac profile, then held as a regression gate): **p50 < 300ms, p95 < 600ms** time-to-suggestion for single-line. These are targets to validate, not promises.
 
@@ -235,6 +243,11 @@ interface ResolvedConfig {
   deadlineMs: number;               // per context-assembly cycle
   temperature: number;
   perLanguage: Record<string, Partial<ResolvedConfig>>;
+  routing: {                        // proposed, ADR-0008
+    enabled: boolean;               // false → FixedRouter on `model`
+    candidates: ModelCandidateConfig[];
+    maxExpectedLatencyMs: number;   // per-profile eligibility limit
+  };
 }
 ```
 
@@ -245,6 +258,32 @@ interface ResolvedConfig {
 **Adding a setting later** = add a field to the schema + `ResolvedConfig` + map it in the two adapters (VS Code settings → config; eval JSON → config). Core logic never changes shape. The extension and eval are the only two places that *produce* a `ResolvedConfig`; everything else just reads it.
 
 **Per-machine model:** VS Code's `machine`-scoped settings let the 16GB Mac default to `qwen2.5-coder:3b` and the 7900 XTX box to `:7b` automatically, with no code difference (Metal vs. ROCm is entirely inside Ollama).
+
+### 8.1 Adaptive model routing (proposed, ADR-0008)
+
+Routing is optional. With it disabled (the default on `fast`), a `FixedRouter` returns the configured `model`, so behaviour is unchanged.
+
+```ts
+interface ModelRouter {
+  route(input: RoutingInput): RoutingDecision;   // pure, synchronous, no I/O
+}
+
+interface ModelCandidate {
+  id: string;
+  model: string;
+  fimFamily: FimFamily;             // explicit, not inferred from the tag
+  backend: CompletionBackend;       // one instance per model; interface unchanged
+  contextWindowTokens: number;
+  languages?: string[];
+  stats?: MeasuredStats;            // from eval, per language × category
+}
+```
+
+- **When:** routing runs before context assembly, on cheap request signals only (trigger kind, single- vs. multi-line position, language, prefix/suffix length). The chosen candidate sets the budgets and FIM template.
+- **How:** filter ineligible candidates (FIM family, language, context window, profile latency limit), then apply a deterministic, sticky rule-based policy that favours the resident, last-used model.
+- **Fallback:** only on fast failures (server down, model missing), only to a candidate allowed by the same profile; never on timeout or cancellation.
+- **Observability:** each decision carries an enum `reason`, recorded on `CompletionEvent` and shown in the status-bar tooltip. No source text is recorded.
+- **Profiles:** `fast` keeps routing off by default and restricts candidates to the fast latency limit when on; `quality` permits larger models within its limit.
 
 ---
 
@@ -291,6 +330,7 @@ Each is a pure function → directly unit-tested and measured by the eval harnes
 - **Eval harness (`eval`):** punches synthetic FIM holes in a sample corpus (Java/TS/React fixtures), scores:
   - quality: **exact-match %**, **line-exact %**, **edit similarity** (Levenshtein ratio),
   - performance: **p50/p95 latency**, tokens/sec.
+  - routing (ADR-0008): results broken down per model, language and fixture `category`; routing compared against a fixed-model baseline with identical fixtures and generation settings. Eval can emit a model-stats file that feeds `ModelCandidate.stats`.
 - **CI:** lint + unit/integration tests + `.vsix` package build on every push.
 
 ### 12.1 Phase gates
@@ -310,6 +350,7 @@ A phase does not begin until the previous gate is green:
 - **Phase 1 — Usable MVP.** Ollama backend, `OpenTabsRetriever`, single/multi-line heuristic, debounce + cancel + cache, status bar, toggle, model picker, settings, secret-file exclusion, `fast`/`quality` profiles.
 - **Phase 2 — LSP context + streaming.** `LspRetriever`, `ImportRetriever`, progressive ghost text, more language profiles.
 - **Phase 3 — Workspace index.** BM25 index with incremental updates on save, behind the existing retriever seam.
+- **Adaptive model routing (ADR-0008, proposed).** Starts once Phase 1 has delivered the shared core pipeline. Its own steps: (1) baseline candidate models per language × category on both machines; (2) `ModelRouter` + `FixedRouter` + rule-based policy + config; (3) integrate into the core pipeline; (4) evaluate against the fixed-model baseline and tune; (5) consider performance-based or learned routing only after (4) shows value. Each step is held to the §12.1 gates.
 - **Later / revisit non-goals.** Embedding retriever, tree-sitter structural context, chat/inline-edit, Open VSX publishing.
 
 ---
@@ -319,6 +360,8 @@ A phase does not begin until the previous gate is green:
 - Whether streaming inline updates are worth the API complexity in Phase 2 or can wait.
 - Index storage format and invalidation strategy (Phase 3 detail).
 - Minimum quality-gain thresholds per gate (set after Phase 0 baseline).
+- Whether adaptive routing is viable on the 16GB Mac at all, given the memory cost of keeping two models resident (ADR-0008); measured in routing step 1.
+- Fixture categories and corpus size needed to tune a routing policy with confidence.
 
 ---
 
@@ -330,3 +373,4 @@ A phase does not begin until the previous gate is green:
 - ADR-0005 — Eval harness as a phase gate; metrics defined
 - ADR-0006 — Config via `ResolvedConfig` + profiles for extensibility
 - ADR-0007 — Backend abstraction; Ollama first
+- ADR-0008 — Adaptive model routing via a pure, sticky `ModelRouter` *(proposed)*

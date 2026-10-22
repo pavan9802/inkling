@@ -23,12 +23,14 @@ docs/adr/             Decision records (numbered).
 4. **Prompt order is [context] → [prefix] → middle → [suffix].** Don't reorder — it's a prompt-cache optimization. (ADR-0004)
 5. **All tuning flows through `ResolvedConfig`.** Core reads config; only `extension` and `eval` produce it. (ADR-0006)
 6. **A slow retriever must never block a completion** — everything in the context cycle respects the deadline. (ADR-0003)
+7. **Model selection goes through `ModelRouter`** *(proposed)*. Routers are pure and synchronous (no I/O; runtime state is passed in as a snapshot). Routing disabled = `FixedRouter` on the configured model, not a special-case branch. Don't add a `model` field to `CompletionBackend` calls — route to a candidate that owns its backend. (ADR-0008)
 
 ## How to extend
 - **Add a language:** add a `LanguageProfile` and register it. No core changes.
 - **Add a context source:** implement `ContextRetriever` in `extension` (or `eval`), register it. No provider changes.
 - **Add a model / FIM family:** add an entry to the FIM template registry (verify tokens against the model's tokenizer).
 - **Add a backend:** implement `CompletionBackend`.
+- **Add a routing rule or model candidate:** candidates and thresholds are config (`ResolvedConfig.routing`); policy logic is a `ModelRouter` implementation in `core/src/routing/`. Back every rule change with eval numbers broken down by category. (ADR-0008)
 - **Add a setting:** add a field to `ResolvedConfig` + map it in both adapters. Core logic unchanged.
 
 ## Quality gates (see ADR-0005)
