@@ -36,10 +36,17 @@ docs/adr/             Decision records (numbered).
 ## Quality gates (see ADR-0005)
 Before advancing a phase: (1) no latency regression vs. the Phase-0 baseline on the 3B/Mac profile; (2) measurable edit-similarity gain on the eval corpus; (3) CI green (lint + tests + `.vsix` build). Run the eval CLI (`packages/eval`) to check 1 and 2.
 
+**Measured baselines (qwen2.5-coder:3b, Mac, 8-case corpus):**
+- Phase-0: similarity 0.519 · p50 1 063 ms · p95 1 789 ms
+- Phase-1: similarity 0.502–0.511 · p50 1 005–1 055 ms · p95 1 769–1 884 ms
+
+The corpus is too small (8 cases) for stable similarity comparison — expand to ≥ 50 cases in Phase 2 before using similarity as a hard gate.
+
 ## Conventions
 - TypeScript strict. Pure functions in `core` are unit-tested.
 - Keep core logic free of side effects where practical (testability).
 - Commit messages: conventional-commits style; reference the ADR when a change touches an architectural decision.
+- **Comments:** write WHY comments (hidden constraints, invariants, non-obvious decisions) and short step-level flow labels inside complex functions. Never explain WHAT the code does — well-named identifiers do that. One line per comment; no multi-paragraph blocks.
 
 ## Planned dev skills (to be authored in Phase 0)
 SKILL.md files for repeatable tasks: *add-language-profile*, *add-context-retriever*, *add-model-template*, *run-eval*, *cut-release* (package the `.vsix`).
