@@ -10,11 +10,18 @@ const BASE: ResolvedConfig = {
     prefixChars: 3000,
     suffixChars: 1000,
     contextChars: 0,
-    maxOutputTokens: 96,
+    // 64 tokens covers a full line of TypeScript comfortably (~10–30 tokens)
+    // and keeps fast-profile inference time low. quality profile uses 256.
+    maxOutputTokens: 64,
   },
   retrievers: { openTabs: false, lsp: false, index: false },
-  multiline: 'auto',
-  debounceMs: 200,
+  // 'always' is the right default: code positions are usually inside open blocks,
+  // and the auto heuristic (last-char block opener check) misses them. Users who
+  // want conservative single-line completions can set multiline to 'auto' or 'off'.
+  multiline: 'always',
+  // 75ms matches Copilot/Codeium. 200ms was too conservative and added a
+  // noticeable delay before the request even started.
+  debounceMs: 75,
   deadlineMs: 80,
   temperature: 0.1,
   perLanguage: {},
