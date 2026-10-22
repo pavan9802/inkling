@@ -24,6 +24,8 @@ export interface CompletionBackend {
   /** Whether the server is reachable and the configured model is available. */
   isAvailable(): Promise<boolean>;
   complete(params: CompletionParams): Promise<CompletionResult>;
+  /** Optional model enumeration; `inkling.pickModel` uses this when present. */
+  listModels?(): Promise<string[]>;
   /** Optional progressive generation; Phase 2 may wire this to ghost text. */
   stream?(params: CompletionParams): AsyncIterable<string>;
 }

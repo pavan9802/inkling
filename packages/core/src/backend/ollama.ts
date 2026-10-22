@@ -36,6 +36,15 @@ export class OllamaBackend implements CompletionBackend {
     }
   }
 
+  async listModels(): Promise<string[]> {
+    // Throws on failure — unlike isAvailable() which returns false. The caller
+    // (pickModel command) decides whether to show an error to the user.
+    const res = await fetch(`${this.opts.endpoint}/api/tags`);
+    if (!res.ok) throw new Error(`Ollama /api/tags failed: ${res.status}`);
+    const data = (await res.json()) as TagsResponse;
+    return data.models.map((m) => m.name);
+  }
+
   async complete(params: CompletionParams): Promise<CompletionResult> {
     const res = await fetch(`${this.opts.endpoint}/api/generate`, {
       method: 'POST',
