@@ -1,38 +1,72 @@
 import * as vscode from 'vscode';
-import type { ContextAssembler, ResolvedConfig, CompletionBackend } from '@inkling/core';
+import { type CompletionRequest, type CompletionPipeline, type ResolvedConfig } from '@inkling/core';
+import { Debouncer } from './debouncer.js';
+import { GateChecker } from './gate-checker.js';
 
-/**
- * The VS Code inline completion provider. In Phase 0 it wires the pipeline's
- * shape but returns nothing; Phase 1 fills in the steps noted below.
- */
 export class InlineProvider implements vscode.InlineCompletionItemProvider {
+  private readonly debouncer = new Debouncer();
+  private readonly gate = new GateChecker();
+
   constructor(
     private readonly getConfig: () => ResolvedConfig,
-    private readonly assembler: ContextAssembler,
-    private readonly backend: CompletionBackend,
+    // Getter rather than a direct reference so extension.ts can swap the
+    // pipeline on config changes without re-registering the provider.
+    private readonly getPipeline: () => CompletionPipeline,
   ) {}
 
   async provideInlineCompletionItems(
     document: vscode.TextDocument,
     position: vscode.Position,
     _context: vscode.InlineCompletionContext,
-    _token: vscode.CancellationToken,
+    token: vscode.CancellationToken,
   ): Promise<vscode.InlineCompletionItem[] | undefined> {
     const config = this.getConfig();
-    if (!config.enabled) return undefined;
 
-    // TODO(phase-1) pipeline:
-    //   1. gate (language enabled, not a secret file, sensible position)
-    //   2. debounce + bridge CancellationToken -> AbortController
-    //   3. completion cache lookup (prefix/suffix hash)
-    //   4. this.assembler.assemble(...) under config.deadlineMs
-    //   5. buildCompletionPrompt(...) via the FIM registry
-    //   6. this.backend.complete(...) with stop/maxTokens/temperature
-    //   7. post-process, then return [new vscode.InlineCompletionItem(text)]
-    void document;
-    void position;
-    void this.assembler;
-    void this.backend;
-    return undefined;
+    // Stage 1 — gate: enabled check, secret-file check, position heuristic.
+    if (!this.gate.check(config, document, position)) return undefined;
+
+    // Stage 2 — debounce: wait debounceMs, abort any prior in-flight request.
+    // The resolved signal is threaded through the pipeline into fetch() so
+    // cancellation reaches the network layer, not just the JS promise chain.
+    let signal: AbortSignal;
+    try {
+      signal = await this.debouncer.debounce(config.debounceMs, token);
+    } catch {
+      return undefined;
+    }
+
+    // Stage 3 — build the request with budget-trimmed prefix/suffix.
+    // Math.max(0, …) guards against documents shorter than prefixChars.
+    const fullText = document.getText();
+    const offset = document.offsetAt(position);
+    const prefix = fullText.slice(Math.max(0, offset - config.budgets.prefixChars), offset);
+    const suffix = fullText.slice(offset, offset + config.budgets.suffixChars);
+
+    const req: CompletionRequest = {
+      uri: document.uri.fsPath,
+      languageId: document.languageId,
+      prefix,
+      suffix,
+      workspaceRoot: vscode.workspace.workspaceFolders?.[0]?.uri.fsPath,
+    };
+
+    // Stage 4 — pipeline: cache → assemble → prompt → complete → post-process.
+    // Any backend exception (network, unknown model family) returns undefined
+    // rather than surfacing an error to the user mid-typing.
+    let result;
+    try {
+      result = await this.getPipeline().run(req, signal);
+    } catch {
+      return undefined;
+    }
+
+    if (!result) return undefined;
+
+    const item = new vscode.InlineCompletionItem(result.text);
+    return [item];
+  }
+
+  dispose(): void {
+    this.debouncer.dispose();
   }
 }
