@@ -1,5 +1,13 @@
 import * as vscode from 'vscode';
-import { ContextAssembler, OllamaBackend, CompletionPipeline, type ResolvedConfig } from '@inkling/core';
+import {
+  ContextAssembler,
+  OllamaBackend,
+  CompletionPipeline,
+  FixedRouter,
+  RequestRouter,
+  type ModelCandidate,
+  type ResolvedConfig,
+} from '@inkling/core';
 import { resolveConfigFromVsCode } from './config/from-vscode.js';
 import { OpenTabsRetriever } from './retrievers/open-tabs.js';
 import { LspRetriever } from './retrievers/lsp-retriever.js';
@@ -16,12 +24,12 @@ export function activate(context: vscode.ExtensionContext): void {
   const getConfig = () => resolveConfigFromVsCode();
   let config = getConfig();
 
-  // assembler, backend, and pipeline are all `let` — onDidChangeConfiguration
+  // assembler, router, and pipeline are all `let` — onDidChangeConfiguration
   // rebuilds them so retriever toggles (e.g. lsp: false → true on profile switch)
   // take effect without re-registering the provider.
   let assembler = buildAssembler(config);
-  let backend = new OllamaBackend({ endpoint: config.endpoint, model: config.model, keepAlive: '30m' });
-  let pipeline = new CompletionPipeline(assembler, backend, getConfig);
+  let router = buildRouter(config);
+  let pipeline = new CompletionPipeline(assembler, router, getConfig);
 
   statusBar.update(config.enabled, config.model);
 
@@ -49,7 +57,7 @@ export function activate(context: vscode.ExtensionContext): void {
       // Optional-call: non-Ollama backends that omit listModels show a warning
       // rather than throwing, so adding a new backend never requires implementing
       // model enumeration.
-      const models = await backend.listModels?.();
+      const models = await router.listModels?.();
       if (!models) {
         void vscode.window.showWarningMessage('Inkling: this backend does not support model listing.');
         return;
@@ -75,8 +83,8 @@ export function activate(context: vscode.ExtensionContext): void {
       // changes all take effect immediately. Rebuilding the pipeline also
       // discards the cache — stale completions from the old model are irrelevant.
       assembler = buildAssembler(config);
-      backend = new OllamaBackend({ endpoint: config.endpoint, model: config.model, keepAlive: '30m' });
-      pipeline = new CompletionPipeline(assembler, backend, getConfig);
+      router = buildRouter(config);
+      pipeline = new CompletionPipeline(assembler, router, getConfig);
       statusBar.update(config.enabled, config.model);
     }),
   );
@@ -84,6 +92,25 @@ export function activate(context: vscode.ExtensionContext): void {
 
 export function deactivate(): void {
   // Disposables are handled via context.subscriptions.
+}
+
+// Constructs the router from the routing section of the config.
+// Called on activate and on every config change so model and budget changes
+// take effect immediately (ADR-0008).
+function buildRouter(config: ResolvedConfig) {
+  const { routing } = config;
+  const fastBackend = new OllamaBackend({ endpoint: config.endpoint, model: routing.fastModel, keepAlive: '30m' });
+  const fast: ModelCandidate = { model: routing.fastModel, backend: fastBackend };
+
+  if (routing.budget === 'latency') return new FixedRouter(fast);
+
+  const qualityBackend = new OllamaBackend({ endpoint: config.endpoint, model: routing.qualityModel, keepAlive: '30m' });
+  const quality: ModelCandidate = { model: routing.qualityModel, backend: qualityBackend };
+
+  if (routing.budget === 'quality') return new FixedRouter(quality);
+
+  // 'auto': RequestRouter picks per-request based on complexity and p50 guard.
+  return new RequestRouter(fast, quality);
 }
 
 // Constructs the assembler with the correct retriever set for the given config.

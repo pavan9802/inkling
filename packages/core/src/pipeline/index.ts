@@ -1,8 +1,8 @@
 import type { CompletionRequest } from '../context/types.js';
 import type { ContextAssembler } from '../context/assembler.js';
-import type { CompletionBackend } from '../backend/types.js';
 import type { ResolvedConfig } from '../config/types.js';
 import type { CompletionMode } from '../language/multiline.js';
+import type { ModelRouter, ModelCandidate } from '../routing/router.js';
 import { getLanguageProfile } from '../language/profiles.js';
 import { resolveCompletionMode } from '../language/multiline.js';
 import { detectFimFamily } from '../prompt/fim-registry.js';
@@ -26,35 +26,52 @@ export interface PipelineResult {
 
 const CACHE_MAX_SIZE = 128;
 const CACHE_TTL_MS = 30_000;
+// Rolling window size for p50 latency used by the RequestRouter latency guard.
+const LATENCY_WINDOW = 20;
 
 /**
- * Orchestrates the full completion lifecycle: cache → assemble → prompt →
- * complete → post-process. `InlineProvider` and the eval CLI both call
- * `pipeline.run()` so the path is identical in production and benchmarks.
+ * Orchestrates the full completion lifecycle: cache → route → assemble →
+ * prompt → complete → post-process. `InlineProvider` and the eval CLI both
+ * call `pipeline.run()` so the path is identical in production and benchmarks.
  */
 export class CompletionPipeline {
   private readonly cache = new CompletionCache(CACHE_MAX_SIZE, CACHE_TTL_MS);
-  // Remembered across calls for typed-through detection (see step 2b below).
+  // Remembered across calls for typed-through detection.
   private lastPrefix: string | undefined;
   private lastSuffix: string | undefined;
+  // Rolling window of recent non-cached latencies, passed to the router so
+  // RequestRouter can apply the latency guard without doing I/O itself.
+  private readonly recentLatencies: number[] = [];
 
   constructor(
     private readonly assembler: ContextAssembler,
-    private readonly backend: CompletionBackend,
+    private readonly router: ModelRouter,
     private readonly getConfig: () => ResolvedConfig,
   ) {}
 
+  private computeP50(): number {
+    if (this.recentLatencies.length === 0) return 0;
+    const sorted = [...this.recentLatencies].sort((a, b) => a - b);
+    return sorted[Math.floor(sorted.length * 0.5)] ?? 0;
+  }
+
+  private recordLatency(ms: number): void {
+    this.recentLatencies.push(ms);
+    // Evict oldest once the window is full.
+    if (this.recentLatencies.length > LATENCY_WINDOW) this.recentLatencies.shift();
+  }
+
   /**
-   * Shared setup for run() and stream(): cache checks, context assembly, and
-   * prompt construction. Returns either an immediate cache result or everything
-   * needed to call the backend. Extracted to avoid duplicating ~40 lines.
+   * Shared setup for run() and stream(): cache checks, routing, context
+   * assembly, and prompt construction. Returns either an immediate cache result
+   * or everything needed to call the backend.
    */
   private async prepare(
     req: CompletionRequest,
     signal: AbortSignal,
   ): Promise<
     | { kind: 'cache'; result: PipelineResult }
-    | { kind: 'ready'; config: ResolvedConfig; mode: CompletionMode; prompt: string; t0: number }
+    | { kind: 'ready'; config: ResolvedConfig; mode: CompletionMode; prompt: string; candidate: ModelCandidate; t0: number }
   > {
     const t0 = Date.now();
     // Step 1: snapshot config once — keeps all steps consistent even if VS
@@ -82,38 +99,41 @@ export class CompletionPipeline {
       }
     }
 
-    // Step 3: assemble cross-file context under the hard deadline (ADR-0003).
-    // A slow or failing retriever contributes nothing rather than blocking.
+    // Step 3: select the model candidate. Done before assembly so the FIM
+    // family is known before we spend time assembling context (ADR-0008).
+    const candidate = this.router.selectCandidate(req, config, { recentP50Ms: this.computeP50() });
+
+    // Step 4: assemble cross-file context under the hard deadline (ADR-0003).
     const snippets = await this.assembler.assemble(req, {
       deadlineMs: config.deadlineMs,
       budgetChars: config.budgets.contextChars,
       signal,
     });
 
-    // Step 4: resolve single vs. multi-line mode from prefix tail + config.
+    // Step 5: resolve single vs. multi-line mode from prefix tail + config.
     const profile = getLanguageProfile(req.languageId);
     const mode = resolveCompletionMode(req.prefix, profile, config.multiline);
 
-    // Step 5: build the raw FIM prompt via the registry (ADR-0002, ADR-0004).
-    // Throws for unknown model families — that's a configuration error, not a
-    // low-value completion, so callers see it as an exception rather than null.
-    const family = detectFimFamily(config.model);
-    if (!family) throw new Error(`Unknown FIM family for model "${config.model}"`);
+    // Step 6: build the raw FIM prompt via the registry (ADR-0002, ADR-0004).
+    // Throws for unknown model families — configuration error, not a low-value
+    // completion, so callers see it as an exception rather than null.
+    const family = detectFimFamily(candidate.model);
+    if (!family) throw new Error(`Unknown FIM family for model "${candidate.model}"`);
 
     const prompt = buildCompletionPrompt({ req, snippets, profile, family });
 
-    return { kind: 'ready', config, mode, prompt, t0 };
+    return { kind: 'ready', config, mode, prompt, candidate, t0 };
   }
 
   async run(req: CompletionRequest, signal: AbortSignal): Promise<PipelineResult | null> {
     const prepared = await this.prepare(req, signal);
     if (prepared.kind === 'cache') return prepared.result;
 
-    const { config, mode, prompt, t0 } = prepared;
+    const { config, mode, prompt, candidate, t0 } = prepared;
 
-    // Step 6: call the backend. stop sequences come from mode, not the profile
+    // Step 7: call the backend. stop sequences come from mode, not the profile
     // directly — single-line positions stop at \n, not \n\n.
-    const result = await this.backend.complete({
+    const result = await candidate.backend.complete({
       prompt,
       stop: [...mode.stopSequences],
       maxTokens: config.budgets.maxOutputTokens,
@@ -121,22 +141,20 @@ export class CompletionPipeline {
       signal,
     });
 
-    // Step 7: post-process — four transforms in sequence.
+    // Step 8: post-process — four transforms in sequence.
     // truncateAtStop and enforceLineLimit/enforceSingleLine are redundant with
-    // the backend stop parameter but act as safety nets: the model can emit a
-    // continuation token before the server honours the stop sequence.
+    // the backend stop parameter but act as safety nets for continuation tokens.
     let text = truncateAtStop(result.text, mode.stopSequences);
     text = trimSuffixOverlap(text, req.suffix);
     text = mode.multiline ? enforceLineLimit(text, mode.maxLines) : enforceSingleLine(text);
 
-    // Step 7 (cont): discard completions that are pure whitespace — showing
-    // them would shift the cursor without producing visible ghost text.
     if (isLowValue(text)) return null;
 
-    // Step 8: store and update typed-through state.
+    // Step 9: store, update typed-through state, record latency for routing.
     this.cache.set(req.prefix, req.suffix, text);
     this.lastPrefix = req.prefix;
     this.lastSuffix = req.suffix;
+    this.recordLatency(Date.now() - t0);
 
     return { text, fromCache: false, latencyMs: Date.now() - t0 };
   }
@@ -157,19 +175,19 @@ export class CompletionPipeline {
       return;
     }
 
-    const { config, mode, prompt, t0 } = prepared;
+    const { config, mode, prompt, candidate, t0 } = prepared;
 
     // Fallback: backend doesn't support streaming, delegate to run().
-    if (!this.backend.stream) {
+    if (!candidate.backend.stream) {
       const result = await this.run(req, signal);
       if (result) yield result;
       return;
     }
 
-    // Step 6: stream from backend, accumulate tokens, yield on meaningful boundaries.
+    // Step 7: stream from backend, accumulate tokens, yield on meaningful boundaries.
     let accumulated = '';
 
-    for await (const chunk of this.backend.stream({
+    for await (const chunk of candidate.backend.stream({
       prompt,
       stop: [...mode.stopSequences],
       maxTokens: config.budgets.maxOutputTokens,
@@ -204,28 +222,24 @@ export class CompletionPipeline {
       }
     }
 
-    // Step 7: post-process the final accumulated text.
+    // Step 8: post-process the final accumulated text.
     let finalText = trimSuffixOverlap(accumulated, req.suffix);
     finalText = mode.multiline ? enforceLineLimit(finalText, mode.maxLines) : enforceSingleLine(finalText);
 
     if (isLowValue(finalText)) return;
 
     // Yield the final result. In single-line mode this is the only yield.
-    // In multiline mode this supersedes any intermediate yields (it may be
-    // identical to the last intermediate, which is fine — caller ignores dupes).
     yield { text: finalText, fromCache: false, latencyMs: Date.now() - t0 };
 
-    // Step 8: store and update typed-through state.
+    // Step 9: store, update typed-through state, record latency for routing.
     this.cache.set(req.prefix, req.suffix, finalText);
     this.lastPrefix = req.prefix;
     this.lastSuffix = req.suffix;
+    this.recordLatency(Date.now() - t0);
 
-    // Pre-populate cache for the "next block after acceptance" pattern:
-    // when the user accepts the first line and presses Enter, the next
-    // invocation's typed-through check finds the rest in cache instantly.
+    // Pre-populate cache for the "next block after acceptance" pattern.
     const firstLine = enforceSingleLine(finalText);
     if (firstLine !== finalText) {
-      // Rest includes the leading '\n' so typed-through fires on the Enter keypress.
       const rest = finalText.slice(firstLine.length);
       if (!isLowValue(rest)) {
         this.cache.set(req.prefix + firstLine, req.suffix, rest);

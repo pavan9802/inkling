@@ -15,6 +15,12 @@ const BASE: ResolvedConfig = {
     maxOutputTokens: 64,
   },
   retrievers: { openTabs: false, lsp: false, index: false },
+  routing: {
+    budget: 'latency',
+    complexityThreshold: 50,
+    fastModel: 'qwen2.5-coder:3b',
+    qualityModel: 'qwen2.5-coder:7b',
+  },
   // 'always' is the right default: code positions are usually inside open blocks,
   // and the auto heuristic (last-char block opener check) misses them. Users who
   // want conservative single-line completions can set multiline to 'auto' or 'off'.
@@ -42,6 +48,8 @@ export function defaultConfigForProfile(profile: Profile): ResolvedConfig {
         budgets: { prefixChars: 6000, suffixChars: 2000, contextChars: 4000, maxOutputTokens: 256 },
         retrievers: { openTabs: true, lsp: true, index: true },
         deadlineMs: 150,
+        // quality profile routes every request to the quality model
+        routing: { ...BASE.routing, budget: 'quality' },
       };
     case 'fast':
     case 'custom':

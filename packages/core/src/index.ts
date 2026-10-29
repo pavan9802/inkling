@@ -15,6 +15,7 @@ export * from './language/profiles.js';
 export * from './language/multiline.js';
 export * from './pipeline/cache.js';
 export * from './pipeline/index.js';
+export * from './routing/router.js';
 export * from './security/secret-filter.js';
 export * from './metrics/types.js';
 export * from './util/errors.js';

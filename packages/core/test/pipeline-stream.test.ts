@@ -1,14 +1,17 @@
 import { describe, it, expect } from 'bun:test';
 import { CompletionPipeline } from '../src/pipeline/index.js';
+import { FixedRouter } from '../src/routing/router.js';
 import type { CompletionBackend, CompletionParams } from '../src/backend/types.js';
 import type { CompletionRequest } from '../src/context/types.js';
 import type { ResolvedConfig } from '../src/config/types.js';
 import { ContextAssembler } from '../src/context/assembler.js';
 import { defaultConfigForProfile } from '../src/config/profiles.js';
 
+const TEST_MODEL = 'qwen2.5-coder:3b';
+
 // Minimal config: qwen model so detectFimFamily works, multiline always.
 function makeConfig(overrides: Partial<ResolvedConfig> = {}): ResolvedConfig {
-  return { ...defaultConfigForProfile('fast'), model: 'qwen2.5-coder:3b', multiline: 'always', ...overrides };
+  return { ...defaultConfigForProfile('fast'), model: TEST_MODEL, multiline: 'always', ...overrides };
 }
 
 // Backend whose stream() yields each string in `chunks` as a separate token.
@@ -32,6 +35,11 @@ function mockNonStreamBackend(text: string): CompletionBackend {
   };
 }
 
+// Wrap a backend in a FixedRouter with the given model tag.
+function fixedRouter(backend: CompletionBackend, model = TEST_MODEL) {
+  return new FixedRouter({ model, backend });
+}
+
 const assembler = new ContextAssembler([]);
 const signal = new AbortController().signal;
 
@@ -52,7 +60,7 @@ async function collect<T>(iter: AsyncIterable<T>): Promise<T[]> {
 describe('CompletionPipeline.stream()', () => {
   it('falls back to run() when backend has no stream method', async () => {
     const backend = mockNonStreamBackend('  return a + b;');
-    const pipeline = new CompletionPipeline(assembler, backend, () => makeConfig());
+    const pipeline = new CompletionPipeline(assembler, fixedRouter(backend), () => makeConfig());
     const results = await collect(pipeline.stream(REQ, signal));
     expect(results).toHaveLength(1);
     expect(results[0].text).toBe('  return a + b;');
@@ -60,24 +68,8 @@ describe('CompletionPipeline.stream()', () => {
   });
 
   it('yields cache hit immediately without calling backend', async () => {
-    const backend = mockStreamBackend(['SHOULD_NOT_APPEAR']);
-    const pipeline = new CompletionPipeline(assembler, backend, () => makeConfig());
-
-    // Prime the cache via run()
-    await pipeline.run(
-      { ...REQ, prefix: 'cached_prefix' },
-      signal,
-    );
-
-    // Now stream with the same prefix — should be a direct cache hit.
-    // (We manually store in cache by running once with a fresh backend.)
     const noCalls = mockNonStreamBackend('  return a + b;');
-    const seeded = new CompletionPipeline(assembler, noCalls, () => makeConfig());
-    // Run once to populate cache
-    await seeded.run({ ...REQ, prefix: 'seed' }, signal);
-
-    const cacheHitBackend = { ...mockStreamBackend(['SHOULD_NOT_APPEAR']) };
-    const pipeline2 = new CompletionPipeline(assembler, cacheHitBackend, () => makeConfig());
+    const pipeline2 = new CompletionPipeline(assembler, fixedRouter(noCalls), () => makeConfig());
     await pipeline2.run({ ...REQ, prefix: 'x' }, signal); // populate cache with 'x'
     const results = await collect(pipeline2.stream({ ...REQ, prefix: 'x' }, signal));
     expect(results[0].fromCache).toBe(true);
@@ -87,7 +79,7 @@ describe('CompletionPipeline.stream()', () => {
   it('single-line mode: yields once with the complete line (no \\n in result)', async () => {
     const backend = mockStreamBackend(['  return', ' a', ' +', ' b;']);
     // multiline: off → stopSequences: ['\n'] → truncateAtStop fires at \n
-    const pipeline = new CompletionPipeline(assembler, backend, () => makeConfig({ multiline: 'off' }));
+    const pipeline = new CompletionPipeline(assembler, fixedRouter(backend), () => makeConfig({ multiline: 'off' }));
     const results = await collect(pipeline.stream(REQ, signal));
     expect(results).toHaveLength(1);
     expect(results[0].text).toBe('  return a + b;');
@@ -100,7 +92,7 @@ describe('CompletionPipeline.stream()', () => {
       '  // done',
       '\n',         // second line completes here
     ]);
-    const pipeline = new CompletionPipeline(assembler, backend, () => makeConfig({ multiline: 'always' }));
+    const pipeline = new CompletionPipeline(assembler, fixedRouter(backend), () => makeConfig({ multiline: 'always' }));
     const results = await collect(pipeline.stream(REQ, signal));
 
     // At minimum two intermediate yields (one per '\n') plus the final yield.
@@ -115,7 +107,7 @@ describe('CompletionPipeline.stream()', () => {
   it('stops at stop sequence and trims accumulated text', async () => {
     const backend = mockStreamBackend(['  return a;\n', '\n', 'MORE']);
     // stopSequences for 'always' with typescript profile = ['\n\n']
-    const pipeline = new CompletionPipeline(assembler, backend, () => makeConfig({ multiline: 'always' }));
+    const pipeline = new CompletionPipeline(assembler, fixedRouter(backend), () => makeConfig({ multiline: 'always' }));
     const results = await collect(pipeline.stream(REQ, signal));
     const last = results[results.length - 1];
     // '\n\n' stop sequence should cut the completion before 'MORE'
@@ -125,7 +117,7 @@ describe('CompletionPipeline.stream()', () => {
 
   it('stores the full completion in cache after streaming completes', async () => {
     const backend = mockStreamBackend(['  return a + b;']);
-    const pipeline = new CompletionPipeline(assembler, backend, () => makeConfig({ multiline: 'off' }));
+    const pipeline = new CompletionPipeline(assembler, fixedRouter(backend), () => makeConfig({ multiline: 'off' }));
     await collect(pipeline.stream(REQ, signal));
 
     // Second call with the same request should be a cache hit.
@@ -135,17 +127,11 @@ describe('CompletionPipeline.stream()', () => {
 
   it('pre-populates cache for the next-block pattern', async () => {
     const backend = mockStreamBackend(['  return a + b;\n  // comment']);
-    const pipeline = new CompletionPipeline(assembler, backend, () => makeConfig({ multiline: 'always' }));
+    const pipeline = new CompletionPipeline(assembler, fixedRouter(backend), () => makeConfig({ multiline: 'always' }));
     await collect(pipeline.stream(REQ, signal));
 
-    // The key for the pre-populated entry is prefix + firstLine.
-    // After accepting "  return a + b;", the user presses '\n', triggering typed-through.
-    // The next invocation's prefix will be REQ.prefix + "  return a + b;" (then "\n" via typed-through).
-    const results = await collect(
-      pipeline.stream({ ...REQ, prefix: REQ.prefix + '  return a + b;' }, signal),
-    );
-    // Typed-through should fire on the '\n' char — but we can at least verify the
-    // pre-populated cache key exists by checking that run() returns a cache hit.
+    // The pre-populated cache key is prefix + firstLine.
+    // After accepting "  return a + b;", the next run() call is a cache hit.
     const hit = await pipeline.run(
       { ...REQ, prefix: REQ.prefix + '  return a + b;' },
       signal,
@@ -156,14 +142,15 @@ describe('CompletionPipeline.stream()', () => {
 
   it('discards low-value completions (pure whitespace)', async () => {
     const backend = mockStreamBackend(['   ', '  ']);
-    const pipeline = new CompletionPipeline(assembler, backend, () => makeConfig({ multiline: 'off' }));
+    const pipeline = new CompletionPipeline(assembler, fixedRouter(backend), () => makeConfig({ multiline: 'off' }));
     const results = await collect(pipeline.stream(REQ, signal));
     expect(results).toHaveLength(0);
   });
 
   it('throws for an unknown FIM model family', async () => {
     const backend = mockStreamBackend(['anything']);
-    const pipeline = new CompletionPipeline(assembler, backend, () => makeConfig({ model: 'llava:7b' }));
+    // The model on the router candidate determines the FIM family, not config.model.
+    const pipeline = new CompletionPipeline(assembler, fixedRouter(backend, 'llava:7b'), () => makeConfig());
     await expect(collect(pipeline.stream(REQ, signal))).rejects.toThrow('Unknown FIM family');
   });
 });

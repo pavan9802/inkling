@@ -10,6 +10,7 @@ import {
   OllamaBackend,
   ContextAssembler,
   CompletionPipeline,
+  FixedRouter,
   defaultConfigForProfile,
   getLanguageProfile,
   type CompletionRequest,
@@ -65,9 +66,13 @@ async function main(argv: readonly string[]): Promise<void> {
     process.exit(1);
   }
 
+  // Eval always uses a single fixed model — FixedRouter wraps the backend so the
+  // pipeline signature is satisfied without any routing logic during benchmarks.
+  const router = new FixedRouter({ model: args.model, backend });
   // No cross-file context for the baseline eval — empty retriever list.
   const assembler = new ContextAssembler([]);
-  const pipeline = new CompletionPipeline(assembler, backend, () => ({ ...config, model: args.model }));
+  const evalConfig = { ...config, model: args.model };
+  const pipeline = new CompletionPipeline(assembler, router, () => evalConfig);
 
   const cases = await loadCases(args.corpus);
   if (cases.length === 0) {

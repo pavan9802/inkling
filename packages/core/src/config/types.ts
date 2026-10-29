@@ -22,6 +22,16 @@ export interface Budgets {
   readonly maxOutputTokens: number;
 }
 
+export interface RoutingConfig {
+  /** 'latency' → always fast model. 'quality' → always quality model.
+   *  'auto' → RequestRouter inspects the request and picks per-keystroke. */
+  readonly budget: 'latency' | 'quality' | 'auto';
+  /** Prefix line count above which auto routing picks the quality model. */
+  readonly complexityThreshold: number;
+  readonly fastModel: string;
+  readonly qualityModel: string;
+}
+
 /** Which context retrievers are active. New sources add a field here. */
 export interface RetrieverToggles {
   readonly openTabs: boolean;
@@ -44,6 +54,7 @@ export interface ResolvedConfig {
   /** Hard deadline for one context-assembly cycle (ADR-0003). */
   readonly deadlineMs: number;
   readonly temperature: number;
+  readonly routing: RoutingConfig;
   /** Per-language overrides, keyed by language id. */
   readonly perLanguage: Readonly<Record<string, Partial<ResolvedConfig>>>;
 }
