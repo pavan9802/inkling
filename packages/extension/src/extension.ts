@@ -1,7 +1,8 @@
 import * as vscode from 'vscode';
-import { ContextAssembler, OllamaBackend, CompletionPipeline } from '@inkling/core';
+import { ContextAssembler, OllamaBackend, CompletionPipeline, type ResolvedConfig } from '@inkling/core';
 import { resolveConfigFromVsCode } from './config/from-vscode.js';
 import { OpenTabsRetriever } from './retrievers/open-tabs.js';
+import { LspRetriever } from './retrievers/lsp-retriever.js';
 import { InlineProvider } from './provider/inline-provider.js';
 import { StatusBar } from './ui/status-bar.js';
 
@@ -12,15 +13,13 @@ export function activate(context: vscode.ExtensionContext): void {
   const statusBar = new StatusBar();
   context.subscriptions.push(statusBar);
 
-  // assembler is const — the retriever list doesn't change at runtime.
-  const assembler = new ContextAssembler([new OpenTabsRetriever()]);
-
   const getConfig = () => resolveConfigFromVsCode();
   let config = getConfig();
 
-  // backend and pipeline are `let` because onDidChangeConfiguration rebuilds
-  // them when the model or endpoint changes. The provider captures them through
-  // the `() => pipeline` closure, so it always uses the current instance.
+  // assembler, backend, and pipeline are all `let` — onDidChangeConfiguration
+  // rebuilds them so retriever toggles (e.g. lsp: false → true on profile switch)
+  // take effect without re-registering the provider.
+  let assembler = buildAssembler(config);
   let backend = new OllamaBackend({ endpoint: config.endpoint, model: config.model, keepAlive: '30m' });
   let pipeline = new CompletionPipeline(assembler, backend, getConfig);
 
@@ -72,9 +71,10 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.workspace.onDidChangeConfiguration((e) => {
       if (!e.affectsConfiguration('inkling')) return;
       config = getConfig();
-      // Rebuild backend and pipeline so the new model/endpoint takes effect.
-      // Rebuilding the pipeline also discards the cache — stale completions from
-      // the old model are irrelevant to the new one.
+      // Rebuild all three so retriever toggles, model changes, and endpoint
+      // changes all take effect immediately. Rebuilding the pipeline also
+      // discards the cache — stale completions from the old model are irrelevant.
+      assembler = buildAssembler(config);
       backend = new OllamaBackend({ endpoint: config.endpoint, model: config.model, keepAlive: '30m' });
       pipeline = new CompletionPipeline(assembler, backend, getConfig);
       statusBar.update(config.enabled, config.model);
@@ -84,4 +84,15 @@ export function activate(context: vscode.ExtensionContext): void {
 
 export function deactivate(): void {
   // Disposables are handled via context.subscriptions.
+}
+
+// Constructs the assembler with the correct retriever set for the given config.
+// Called on activate and on every config change so retriever toggles take effect.
+function buildAssembler(config: ResolvedConfig): ContextAssembler {
+  const retrievers = [];
+  if (config.retrievers.openTabs) retrievers.push(new OpenTabsRetriever());
+  // LspRetriever is only active on quality profile or when explicitly enabled —
+  // it adds an extra LSP round-trip per completion which is unnecessary for fast.
+  if (config.retrievers.lsp) retrievers.push(new LspRetriever());
+  return new ContextAssembler(retrievers);
 }
